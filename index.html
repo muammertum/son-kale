@@ -325,6 +325,7 @@ function newGame() {
   };
   mode = null;
   computeFlow();
+  SURP.reset();
 }
 
 function fmtTime(s) { s = Math.floor(s); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); }
@@ -368,7 +369,7 @@ function hurt(t, d) {
   if (t.hp <= 0) return;
   t.hp -= d; t.hit = 0.12; spark(t.x, t.y - 12, t.side === 'e' ? '#ff5a4a' : '#6fd4ff', 3);
   if (t.hp <= 0) {
-    if (t.side === 'e') { G.gold += t.gold; G.kills++; G.floats.push({ x: t.x, y: t.y - 26, t: 1.2, s: '+' + t.gold, c: '#ffd84a' }); spark(t.x, t.y - 10, '#ff5a4a', t.kind === 'big' ? 24 : 9); }
+    if (t.side === 'e') { G.gold += t.gold; G.kills++; G.floats.push({ x: t.x, y: t.y - 26, t: 1.2, s: '+' + t.gold, c: '#ffd84a' }); spark(t.x, t.y - 10, '#ff5a4a', t.kind === 'big' ? 24 : 9); SURP.onKill(t); }
     else spark(t.x, t.y - 10, '#6fd4ff', 10);
   }
 }
@@ -379,7 +380,7 @@ function damageStruct(s, d) {
 function destroyStruct(s) {
   structAt[s.cy * GW + s.cx] = null; s.spot.s = null;
   G.structs.splice(G.structs.indexOf(s), 1);
-  spark(s.x, s.y, '#a29c90', 26);
+  spark(s.x, s.y, '#a29c90', 26); SURP.shake(9);
   const c = G.cmd;
   if (c.inside === s) { c.inside = null; c.x = s.x; c.y = s.y + 8; c.path = []; toast('Kale yıkıldı! Komutan açıkta!'); }
   computeFlow();
@@ -387,7 +388,7 @@ function destroyStruct(s) {
 }
 function shoot(from, fx, fy, t, dmg, spd, kind, splash) { G.proj.push({ x: fx, y: fy, t, dmg, spd: spd || 460, kind: kind || 'arrow', splash: splash || 0, lx: t.x, ly: t.y - 8, ang: 0, dead: false }); }
 function explode(p) {
-  G.booms.push({ x: p.lx, y: p.ly + 8, t: 0.45, r: p.splash });
+  G.booms.push({ x: p.lx, y: p.ly + 8, t: 0.45, r: p.splash }); SURP.shake(5);
   spark(p.lx, p.ly, '#ffb03a', 22);
   for (const e of G.enemies) {
     if (e.hp <= 0) continue;
@@ -476,7 +477,7 @@ function updateWaves(dt) {
     if (G.queue.length) {
       G.spawnT -= dt;
       if (G.spawnT <= 0) {
-        const k = G.queue.shift(); const e = makeEnemy(k === 'big'); G.enemies.push(e);
+        const k = G.queue.shift(); const e = makeEnemy(k === 'big'); G.enemies.push(e); SURP.onSpawn(e);
         if (k === 'big') { G.bigWarn = { t: 3.2, left: e.x < W / 2, big: e }; $('warn').firstChild.style.display = 'inline-block'; setTimeout(() => { $('warn').firstChild.style.display = 'none'; }, 2600); }
         G.spawnT = Math.max(0.25, CFG.WAVE.SPAWN_GAP - 0.01 * G.wave);
       }
@@ -654,6 +655,7 @@ function update(dt) {
   for (const b of G.booms) b.t -= dt;
   G.booms = G.booms.filter(b => b.t > 0);
   if (G.bigWarn) { G.bigWarn.t -= dt; if (G.bigWarn.t <= 0) G.bigWarn = null; }
+  SURP.update(dt);
   if (G.cmd.hp <= 0) gameOver();
 }
 
@@ -707,7 +709,8 @@ const PAL = {
   enemy: { body: '#bf3a2b', trim: '#ff9a7a', legs: '#3a1d1d', helm: '#3a2626' },
   big: { body: '#7e2121', trim: '#ff5a3a', legs: '#2a1616', helm: '#2b1515' },
   cmd: { body: '#a8162c', trim: '#ffd84a', legs: '#3a2a6a', helm: '#f6d54a' },
-  king: { body: '#c8102e', trim: '#ffe27a', legs: '#5a1a7a', helm: '#e8b930' }
+  king: { body: '#c8102e', trim: '#ffe27a', legs: '#5a1a7a', helm: '#e8b930' },
+  gilt: { body: '#f2c230', trim: '#fff4b8', legs: '#7a5a12', helm: '#ffe066' }   // nadir Altın Akıncı
 };
 function crescent(x, y, r, col, hole) {
   ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.28); ctx.fill();
@@ -719,7 +722,7 @@ function star(x, y, r, n, col) {
   ctx.closePath(); ctx.fill();
 }
 function drawUnit(u) {
-  const P = u.fly ? PAL.king : PAL[u.kind], s = u.sc, f = u.face, x = u.x, y = u.y;
+  const P = u.fly ? PAL.king : u.gilt ? PAL.gilt : PAL[u.kind], s = u.sc, f = u.face, x = u.x, y = u.y;
   const sw = u.moving ? Math.sin(u.anim * 13) : 0, bob = u.moving ? -Math.abs(Math.sin(u.anim * 13)) * 1.5 * s : 0;
   ctx.save();
   ctx.fillStyle = 'rgba(0,0,0,.42)'; ell(ctx, x, y + 2, 9 * s, 4 * s); ctx.fill();
@@ -1045,6 +1048,7 @@ function render() {
     g.addColorStop(0, `rgba(255,30,30,${a})`); g.addColorStop(1, 'rgba(255,30,30,0)');
     ctx.fillStyle = g; ctx.fillRect(b.left ? 0 : W - 220, 0, 220, H);
   }
+  SURP.draw();
   if (G.over) { ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(0, 0, W, H); }
 }
 function drawMarks() {
@@ -1190,6 +1194,7 @@ cv.addEventListener('pointerdown', e => {
   e.preventDefault();
   const p = toWorld(e); mouse.x = p.x; mouse.y = p.y; mouse.in = true;
   if (state !== 'play' || G.over) return;
+  if (SURP.tap(p)) return;
   if (mode === 'tower' || mode === 'castle') tryBuild(p);
   else if (mode === 'repair') tryRepair(p);
   else if (mode === 'upgrade') tryUpgrade(p);
@@ -1392,11 +1397,206 @@ const Music = (() => {
       const v = speechSynthesis.getVoices().find(x => /^tr/i.test(x.lang)); if (v) u.voice = v;
       speechSynthesis.cancel(); speechSynthesis.speak(u);
     },
+    sfx(kind, lvl) {   // sürpriz efektleri için kısa sesler (müzik kapalıysa susar)
+      if (!ac || muted || ac.state !== 'running') return;
+      const t = ac.currentTime + 0.01;
+      const blip = (type, f, at, dur, v, f2) => {
+        const g = ac.createGain(); g.connect(master);
+        g.gain.setValueAtTime(0.0001, at); g.gain.linearRampToValueAtTime(v, at + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+        const o = osc(type, f, at, at + dur + 0.02); if (f2) o.frequency.exponentialRampToValueAtTime(f2, at + dur); o.connect(g);
+      };
+      if (kind === 'coin') { blip('square', 988, t, 0.08, 0.07); blip('square', 1319, t + 0.07, 0.25, 0.07); }
+      else if (kind === 'combo') { const k = Math.min(lvl || 1, 6); for (let i = 0; i < 3 + k; i++) blip('triangle', hz(Math.min(i + k, 11)) * 2, t + i * 0.06, 0.22, 0.12); }
+      else if (kind === 'star') { blip('sine', 1800, t, 0.6, 0.09, 3600); blip('sine', 2400, t + 0.12, 0.5, 0.06, 4200); }
+      else if (kind === 'wish') { [0, 2, 4, 7].forEach((n, i) => blip('sine', hz(n) * 2, t + i * 0.09, 0.5, 0.12)); }
+      else if (kind === 'thunder') {
+        const s = ac.createBufferSource(); s.buffer = noise;
+        const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(1800, t); lp.frequency.exponentialRampToValueAtTime(120, t + 1.2);
+        const g = ac.createGain(); g.gain.setValueAtTime(0.7, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.3);
+        s.connect(lp); lp.connect(g); g.connect(master); s.start(t, 0, 1.3);
+      }
+      else if (kind === 'fanfare') { [0, 4, 7, 4, 7, 11].forEach((n, i) => zurna(hz(n), t + i * 0.13, i === 5 ? 0.7 : 0.12, 0.16)); davul(t, 0.9); davul(t + 0.52, 0.9); davul(t + 0.65, 0.9); }
+    },
     dbg: () => ({ state: ac && ac.state, bpm: Math.round(bpm), inten: +inten.toFixed(2), bar })
   };
 })();
 $('bMusic').textContent = Music.muted() ? '🔇' : '🔊';
 $('bMusic').onclick = () => { $('bMusic').textContent = Music.toggle() ? '🔇' : '🔊'; };
+
+/* =====================================================================
+   SÜRPRİZLER — seri bonusu, Altın Akıncı, kayan yıldız, gizli Fetih kodu
+   (oyunun kendi koduna dokunmadan, birkaç küçük kancayla bağlanır)
+   ===================================================================== */
+const SURP = (() => {
+  const SFX = (k, l) => { try { Music.sfx(k, l); } catch (e) {} };
+  const COMBO_STEPS = [5, 10, 15, 20, 30, 40, 50, 75, 100];
+  const CONF_COLS = ['#ffd84a', '#ff4a3d', '#ffffff', '#5fe07a', '#6fd4ff', '#c8102e'];
+  let S = null, shakeMag = 0, shook = false;
+
+  function reset() {
+    S = { combo: 0, comboT: 0, best: 0, conf: [], banner: null, star: null, starT: 25 + Math.random() * 20,
+          giltWave: -1, bolts: [], flash: 0, fetih: false, nextStar: 1 };
+  }
+  function shake(m) { shakeMag = Math.max(shakeMag, m); }
+  function banner(s, sub, c) { S.banner = { s, sub: sub || '', c: c || '#ffd84a', t: 2.2 }; }
+  function confetti(x, y, n, cols, up) {
+    for (let i = 0; i < n; i++) {
+      const a = up ? -Math.PI / 2 + (Math.random() - 0.5) * 1.6 : Math.random() * 6.28, v = 120 + Math.random() * 260;
+      S.conf.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - (up ? 60 : 90), r: Math.random() * 6.28, vr: (Math.random() - 0.5) * 14,
+        w: 4 + Math.random() * 4, h: 2 + Math.random() * 3, c: (cols || CONF_COLS)[(Math.random() * (cols || CONF_COLS).length) | 0], t: 1.6 + Math.random() * 1.2 });
+    }
+  }
+
+  /* --- 1) Seri (combo): art arda hızlı düşman yen, bonus altın kap --- */
+  function onKill(e) {
+    if (!S) return;
+    S.combo = S.comboT > 0 ? S.combo + 1 : 1; S.comboT = 2.2; S.best = Math.max(S.best, S.combo);
+    if (COMBO_STEPS.includes(S.combo)) {
+      const lvl = COMBO_STEPS.indexOf(S.combo) + 1, bonus = S.combo * 2;
+      G.gold += bonus;
+      const ek = { 5: "'Lİ", 10: "'LU", 15: "'Lİ", 20: "'Lİ", 30: "'LU", 40: "'LI", 50: "'Lİ", 75: "'Lİ", 100: "'LÜ" }[S.combo];
+      banner(S.combo + ek + ' SERİ!', '+' + bonus + ' bonus altın', lvl > 3 ? '#ff7a3a' : '#ffd84a');
+      SFX('combo', lvl); shake(3 + lvl);
+      if (S.combo >= 10) confetti(G.cmd.x, G.cmd.y - 30, 30 + lvl * 10);
+    }
+    if (e.gilt) {
+      confetti(e.x, e.y - 14, 70, ['#ffd84a', '#ffe066', '#fff4b8', '#e8a317']);
+      shake(10); SFX('coin');
+      banner('ALTIN AKINCI DÜŞTÜ!', '+' + e.gold + ' altın ganimet', '#ffe066');
+    } else if (e.kind === 'big') shake(12);
+  }
+
+  /* --- 2) Altın Akıncı: nadiren çıkan, hızlı ve parlak hazine taşıyıcı --- */
+  function onSpawn(e) {
+    if (!S || e.kind === 'big' || G.wave < 2 || S.giltWave === G.wave || Math.random() > 0.07) return;
+    S.giltWave = G.wave;
+    e.gilt = true; e.hp = e.maxHp = Math.round(e.maxHp * 1.6); e.speed *= 1.4; e.gold = 60 + G.wave * 5; e.sc = 1.15;
+    toast('✨ Altın Akıncı belirdi! Kaçırmadan yakala!'); SFX('star');
+  }
+
+  /* --- 3) Kayan yıldız: gece gökyüzünden geçer, dokunursan dilek tutarsın --- */
+  function spawnStar() {
+    const fromLeft = Math.random() < 0.5, y0 = 60 + Math.random() * 180;
+    S.star = { x: fromLeft ? -40 : W + 40, y: y0, vx: (fromLeft ? 1 : -1) * (210 + Math.random() * 60), vy: 38 + Math.random() * 30, trail: [] };
+    SFX('star');
+  }
+  function wish() {
+    const st = S.star; S.star = null; S.starT = 40 + Math.random() * 35;
+    confetti(st.x, st.y, 40, ['#ffffff', '#fff4b8', '#9fe8ff', '#ffd84a']);
+    SFX('wish');
+    const r = Math.random();
+    if (r < 0.34) { const g = 40 + G.wave * 6; G.gold += g; toast('🌠 Dilek tuttun: gökten ' + g + ' altın yağdı!'); banner('DİLEĞİN KABUL OLDU', '+' + g + ' altın', '#9fe8ff'); }
+    else if (r < 0.67 || !G.enemies.length) {
+      const c = G.cmd; c.hp = c.maxHp; for (const a of G.allies) a.hp = a.maxHp;
+      spark(c.x, c.y - 14, '#9dffb8', 26); toast('🌠 Dilek tuttun: komutan ve askerler tamamen iyileşti!'); banner('DİLEĞİN KABUL OLDU', 'Herkes iyileşti', '#9dffb8');
+    } else {
+      const list = G.enemies.filter(e => e.hp > 0).sort(() => Math.random() - 0.5).slice(0, 6);
+      for (const e of list) { S.bolts.push({ x: e.x, y: e.y - 10, t: 0.35, seed: Math.random() * 1000 }); hurt(e, 55 + G.wave * 6); }
+      S.flash = 0.5; shake(14); SFX('thunder');
+      toast('🌠 Dilek tuttun: gökten yıldırım düştü!'); banner('YILDIRIM!', list.length + ' düşmana çarptı', '#bfe6ff');
+    }
+  }
+  function tap(p) {
+    const st = S && S.star;
+    if (!st) return false;
+    if (Math.hypot(p.x - st.x, p.y - st.y) < 85) { wish(); return true; }
+    return false;
+  }
+
+  /* --- 4) Gizli Fetih kodu: ↑↑↓↓←→←→ B A (mobilde: üstteki isme hızlıca 5 kez dokun) --- */
+  function fetih() {
+    if (state !== 'play' || G.over || !S) return;
+    if (S.fetih) { toast('Fetih zaten ilan edildi 😉'); return; }
+    S.fetih = true; G.gold += 145;
+    for (let i = 0; i < 5; i++) setTimeout(() => { if (S) { confetti(200 + Math.random() * (W - 400), H - 40, 45, null, true); shake(5); } }, i * 260);
+    banner('1453 — FETİH!', 'Gizli kodu buldun! +145 altın', '#ff4a3d');
+    SFX('fanfare'); try { Music.shout('Fetih!'); } catch (e) {}
+  }
+  const KONAMI = ['arrowup', 'arrowup', 'arrowdown', 'arrowdown', 'arrowleft', 'arrowright', 'arrowleft', 'arrowright', 'b', 'a'];
+  let kIdx = 0;
+  addEventListener('keydown', e => {
+    const k = (e.key || '').toLowerCase();
+    kIdx = k === KONAMI[kIdx] ? kIdx + 1 : (k === KONAMI[0] ? 1 : 0);
+    if (kIdx === KONAMI.length) { kIdx = 0; fetih(); }
+  });
+  let taps = [];
+  $('hName').addEventListener('pointerdown', () => {
+    const now = performance.now(); taps = taps.filter(t => now - t < 1800); taps.push(now);
+    if (taps.length >= 5) { taps = []; fetih(); }
+  });
+
+  function update(dt) {
+    if (!S) return;
+    if (S.comboT > 0) { S.comboT -= dt; if (S.comboT <= 0) S.combo = 0; }
+    if (S.banner) { S.banner.t -= dt; if (S.banner.t <= 0) S.banner = null; }
+    S.flash = Math.max(0, S.flash - dt);
+    for (const b of S.bolts) b.t -= dt;
+    S.bolts = S.bolts.filter(b => b.t > 0);
+    for (const c of S.conf) { c.t -= dt; c.x += c.vx * dt; c.y += c.vy * dt; c.vy += 340 * dt; c.vx *= 0.985; c.r += c.vr * dt; }
+    S.conf = S.conf.filter(c => c.t > 0 && c.y < H + 20);
+    if (S.star) {
+      const st = S.star; st.x += st.vx * dt; st.y += st.vy * dt;
+      st.trail.unshift({ x: st.x, y: st.y }); if (st.trail.length > 22) st.trail.pop();
+      if (st.x < -80 || st.x > W + 80) { S.star = null; S.starT = 30 + Math.random() * 30; }
+    } else { S.starT -= dt; if (S.starT <= 0) spawnStar(); }
+    for (const e of G.enemies) if (e.gilt && Math.random() < 0.5) G.parts.push({ x: e.x + (Math.random() - 0.5) * 14, y: e.y - 8 - Math.random() * 18, vx: (Math.random() - 0.5) * 20, vy: -20 - Math.random() * 30, t: 0.5, c: Math.random() < 0.5 ? '#ffe066' : '#fff4b8' });
+  }
+
+  function draw() {
+    if (!S) return;
+    // Altın Akıncı ışıltısı (gece katmanının üstünde parlasın)
+    ctx.globalCompositeOperation = 'lighter';
+    for (const e of G.enemies) if (e.gilt) {
+      const r = 34 + 6 * Math.sin(G.anim * 7), g = ctx.createRadialGradient(e.x, e.y - 14, 0, e.x, e.y - 14, r);
+      g.addColorStop(0, 'rgba(255,215,80,.55)'); g.addColorStop(1, 'rgba(255,180,20,0)'); ctx.fillStyle = g; ctx.fillRect(e.x - r, e.y - 14 - r, r * 2, r * 2);
+    }
+    // kayan yıldız
+    if (S.star) {
+      const st = S.star;
+      for (let i = st.trail.length - 1; i > 0; i--) {
+        const a = st.trail[i], b = st.trail[i - 1], k = 1 - i / st.trail.length;
+        ctx.strokeStyle = `rgba(200,235,255,${0.7 * k})`; ctx.lineWidth = 1 + 5 * k; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      }
+      const g = ctx.createRadialGradient(st.x, st.y, 0, st.x, st.y, 30); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.3, 'rgba(180,225,255,.7)'); g.addColorStop(1, 'rgba(120,180,255,0)');
+      ctx.fillStyle = g; ctx.fillRect(st.x - 30, st.y - 30, 60, 60);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    if (S.star) star(S.star.x, S.star.y, 6 + Math.sin(G.anim * 20), 5, '#ffffff');
+    // yıldırımlar
+    for (const b of S.bolts) {
+      const R = mulberry(b.seed | 0); ctx.strokeStyle = `rgba(220,240,255,${b.t / 0.35})`; ctx.lineWidth = 3; ctx.beginPath();
+      let x = b.x + (R() - 0.5) * 80, y = 0; ctx.moveTo(x, y);
+      while (y < b.y) { y = Math.min(b.y, y + 30 + R() * 40); x += (R() - 0.5) * 40; if (y >= b.y) x = b.x; ctx.lineTo(x, y); }
+      ctx.stroke();
+    }
+    if (S.flash > 0) { ctx.fillStyle = `rgba(220,235,255,${S.flash * 0.6})`; ctx.fillRect(0, 0, W, H); }
+    // konfeti
+    for (const c of S.conf) {
+      ctx.save(); ctx.globalAlpha = clamp(c.t, 0, 1); ctx.translate(c.x, c.y); ctx.rotate(c.r); ctx.scale(1, Math.cos(c.r * 1.7));
+      ctx.fillStyle = c.c; ctx.fillRect(-c.w / 2, -c.h / 2, c.w, c.h); ctx.restore();
+    }
+    // seri sayacı
+    if (S.combo >= 3 && state === 'play') {
+      const c = G.cmd, x = c.inside ? c.inside.x : c.x, y = (c.inside ? c.inside.y - 116 : c.y - 76 - (c.fly ? 30 : 0));
+      ctx.globalAlpha = clamp(S.comboT, 0, 1); txt('x' + S.combo + ' seri', x, y, 14 + Math.min(S.combo, 20) * 0.5, S.combo >= 10 ? '#ff9a3a' : '#ffe27a'); ctx.globalAlpha = 1;
+    }
+    // büyük yazı
+    if (S.banner) {
+      const b = S.banner, k = 2.2 - b.t, sc = k < 0.18 ? 0.4 + k / 0.18 * 0.75 : k < 0.3 ? 1.15 - (k - 0.18) / 0.12 * 0.15 : 1;
+      ctx.save(); ctx.globalAlpha = clamp(b.t / 0.4, 0, 1); ctx.translate(W / 2, H * 0.3); ctx.scale(sc, sc);
+      txt(b.s, 0, 0, 54, b.c); if (b.sub) txt(b.sub, 0, 36, 22, '#fbeed0'); ctx.restore();
+    }
+    // ekran sarsıntısı (tuvali CSS ile hafifçe kaydırır)
+    if (shakeMag > 0.3) {
+      const dx = (Math.random() - 0.5) * shakeMag, dy = (Math.random() - 0.5) * shakeMag;
+      cv.style.transform = `translate(calc(-50% + ${dx.toFixed(1)}px), calc(-50% + ${dy.toFixed(1)}px))`; shook = true;
+      shakeMag *= 0.88;
+    } else if (shook) { cv.style.transform = ''; shook = false; shakeMag = 0; }
+  }
+
+  return { reset, onKill, onSpawn, tap, update, draw, shake, fetih, dbg: () => S, star: spawnStar };
+})();
 
 newGame(); fit();
 let last = performance.now();
